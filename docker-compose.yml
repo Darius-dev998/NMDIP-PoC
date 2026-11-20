@@ -1,0 +1,45 @@
+# Local production-like stack for NMDIP: API + PostgreSQL.
+# Frontend is built separately (`npm run build`) and served by any static host.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: nmdip
+      POSTGRES_USER: nmdip
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./Database/Supabase:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U nmdip -d nmdip" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/src/Nmdip.Api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Nmdip: Host=postgres;Port=5432;Database=nmdip;Username=nmdip;Password=${POSTGRES_PASSWORD}
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:?set JWT_SIGNING_KEY}
+      Jwt__Issuer: NMDIP
+      Jwt__Audience: NMDIP.Client
+      Bootstrap__Key: ${BOOTSTRAP_KEY:?set BOOTSTRAP_KEY}
+      Cors__AllowedOrigins__0: ${FRONTEND_ORIGIN:-http://localhost:5173}
+    ports:
+      - "5129:8080"
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:8080/health/live" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  pgdata:
